@@ -210,8 +210,8 @@ export class ModuleSettings {
     });
 
     game.settings.register(this.moduleId, 'serverHost', {
-      name: 'Websocket Server Host',
-      hint: 'IP address for local Websocket Server connections to the MCP Server (usually localhost). Not used for Remote Connections',
+      name: 'MCP Server Host',
+      hint: 'IP address or hostname of the machine running the MCP server, as reachable from your browser (e.g. 192.168.1.10). Use "localhost" only if your browser and MCP server are on the same machine.',
       scope: 'world',
       config: true,
       type: String,

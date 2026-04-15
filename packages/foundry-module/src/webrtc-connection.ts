@@ -136,15 +136,14 @@ export class WebRTCConnection {
 
   private async sendSignalingOffer(offer: RTCSessionDescriptionInit): Promise<void> {
     // Use HTTP POST for signaling to dedicated WebRTC signaling port (31416)
-    // For HTTPS pages, browsers allow HTTP POST to localhost (security exception)
-    // The MCP server must be running on the same machine as the browser
-    const isHttps = window.location.protocol === 'https:';
-    const signalingHost = isHttps ? 'localhost' : this.config.serverHost;
-    const protocol = 'http'; // Always http:// - localhost exception allows this from HTTPS
+    // Uses the configured serverHost so remote Foundry installs can reach the MCP server
+    // by IP (e.g. 192.168.1.x) rather than being forced to localhost
+    const signalingHost = this.config.serverHost;
+    const protocol = 'http'; // Always http:// for signaling
     const WEBRTC_SIGNALING_PORT = 31416; // Dedicated port for WebRTC signaling
     const httpUrl = `${protocol}://${signalingHost}:${WEBRTC_SIGNALING_PORT}/webrtc-offer`;
 
-    this.log(`Sending WebRTC offer via HTTP POST: ${httpUrl} (HTTPS page: ${isHttps})`);
+    this.log(`Sending WebRTC offer via HTTP POST: ${httpUrl}`);
 
     try {
       const response = await fetch(httpUrl, {
