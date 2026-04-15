@@ -3520,8 +3520,8 @@ export class FoundryDataAccess {
             (actorData as any).folder = folderId;
           }
 
-          // Create the actor
-          const newActor = await Actor.create(actorData);
+          // Create the actor without opening the sheet
+          const newActor = await Actor.create(actorData, { renderSheet: false } as any);
           if (!newActor) {
             throw new Error(`Failed to create actor "${customName}"`);
           }
@@ -3773,8 +3773,8 @@ export class FoundryDataAccess {
         (actorData as any).folder = folderId;
       }
       
-      // Create the new actor
-      const createdDocs = await Actor.createDocuments([actorData]);
+      // Create the new actor without opening the sheet
+      const createdDocs = await Actor.createDocuments([actorData], { renderSheet: false } as any);
       if (!createdDocs || createdDocs.length === 0) {
         throw new Error('Failed to create actor document');
       }
@@ -5799,7 +5799,7 @@ export class FoundryDataAccess {
         actorData.system = this.setNestedValue({}, biographyPath, request.biography);
       }
 
-      const actor = await Actor.create(actorData as any);
+      const actor = await Actor.create(actorData as any, { renderSheet: false } as any);
       if (!actor) throw new Error('Failed to create actor');
 
       this.auditLog('createNPCActor', request, 'success');
@@ -6159,7 +6159,7 @@ export class FoundryDataAccess {
       await combat.activate();
 
       if (request.rollInitiative) {
-        await combat.rollAll();
+        await combat.rollAll({ skipDialog: true });
       }
 
       this.auditLog('createCombat', request, 'success');
@@ -6217,9 +6217,9 @@ export class FoundryDataAccess {
     if (!combat) throw new Error('No active combat encounter');
 
     if (request.ids?.length) {
-      await combat.rollInitiative(request.ids);
+      await combat.rollInitiative(request.ids, { skipDialog: true });
     } else {
-      await combat.rollAll();
+      await combat.rollAll({ skipDialog: true });
     }
 
     return this.formatCombatState(combat);
@@ -6254,7 +6254,9 @@ export class FoundryDataAccess {
     this.validateFoundryState();
     const combat = (game.combat as any);
     if (!combat) throw new Error('No active combat encounter');
-    await combat.endCombat();
+    // Use delete() directly to avoid the "Are you sure?" confirmation dialog
+    // that combat.endCombat() shows
+    await combat.delete();
     this.auditLog('endCombat', {}, 'success');
     return { success: true };
   }

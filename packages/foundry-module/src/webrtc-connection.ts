@@ -135,15 +135,28 @@ export class WebRTCConnection {
   }
 
   private async sendSignalingOffer(offer: RTCSessionDescriptionInit): Promise<void> {
-    // Use HTTP POST for signaling to dedicated WebRTC signaling port (31416)
-    // Uses the configured serverHost so remote Foundry installs can reach the MCP server
-    // by IP (e.g. 192.168.1.x) rather than being forced to localhost
-    const signalingHost = this.config.serverHost;
-    const protocol = 'http'; // Always http:// for signaling
-    const WEBRTC_SIGNALING_PORT = 31416; // Dedicated port for WebRTC signaling
-    const httpUrl = `${protocol}://${signalingHost}:${WEBRTC_SIGNALING_PORT}/webrtc-offer`;
+    // Use HTTP POST for WebRTC signaling.
+    //
+    // When served over HTTPS a browser will block plain-HTTP requests to any
+    // non-localhost host ("mixed active content"). To avoid this we use a
+    // relative URL so the request goes to the same origin as Foundry itself.
+    // The reverse proxy (Caddy, nginx, etc.) must forward  /webrtc-offer  to
+    // the MCP server's signaling port (31416).
+    //
+    // Example Caddy snippet (add inside your existing site block):
+    //   handle /webrtc-offer {
+    //     reverse_proxy 192.168.3.21:31416
+    //   }
+    //
+    // When served over plain HTTP the browser has no mixed-content restriction,
+    // so we connect directly to the MCP server by host:port.
+    const isHttps = window.location.protocol === 'https:';
+    const WEBRTC_SIGNALING_PORT = 31416;
+    const httpUrl = isHttps
+      ? '/webrtc-offer'                                                          // same-origin via reverse proxy
+      : `http://${this.config.serverHost}:${WEBRTC_SIGNALING_PORT}/webrtc-offer`; // direct (HTTP only)
 
-    this.log(`Sending WebRTC offer via HTTP POST: ${httpUrl}`);
+    this.log(`Sending WebRTC offer via HTTP POST: ${httpUrl} (HTTPS: ${isHttps})`);
 
     try {
       const response = await fetch(httpUrl, {
