@@ -106,6 +106,42 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.toggle-token-condition`] = this.handleToggleTokenCondition.bind(this);
     CONFIG.queries[`${modulePrefix}.get-available-conditions`] = this.handleGetAvailableConditions.bind(this);
 
+    // Actor write operations
+    CONFIG.queries[`${modulePrefix}.createNPCActor`] = this.handleCreateNPCActor.bind(this);
+    CONFIG.queries[`${modulePrefix}.updateActorBiography`] = this.handleUpdateActorBiography.bind(this);
+    CONFIG.queries[`${modulePrefix}.setActorImages`] = this.handleSetActorImages.bind(this);
+
+    // Scene write operations
+    CONFIG.queries[`${modulePrefix}.createScene`] = this.handleCreateScene.bind(this);
+    CONFIG.queries[`${modulePrefix}.setSceneBackground`] = this.handleSetSceneBackground.bind(this);
+    CONFIG.queries[`${modulePrefix}.findScene`] = this.handleFindScene.bind(this);
+
+    // Journal write operations
+    CONFIG.queries[`${modulePrefix}.findJournal`] = this.handleFindJournal.bind(this);
+    CONFIG.queries[`${modulePrefix}.addJournalPage`] = this.handleAddJournalPage.bind(this);
+    CONFIG.queries[`${modulePrefix}.createFolder`] = this.handleCreateFolder.bind(this);
+
+    // Combat tracker
+    CONFIG.queries[`${modulePrefix}.getCombatState`] = this.handleGetCombatState.bind(this);
+    CONFIG.queries[`${modulePrefix}.createCombat`] = this.handleCreateCombat.bind(this);
+    CONFIG.queries[`${modulePrefix}.addCombatants`] = this.handleAddCombatants.bind(this);
+    CONFIG.queries[`${modulePrefix}.setCombatantInitiative`] = this.handleSetCombatantInitiative.bind(this);
+    CONFIG.queries[`${modulePrefix}.rollCombatInitiative`] = this.handleRollCombatInitiative.bind(this);
+    CONFIG.queries[`${modulePrefix}.nextCombatTurn`] = this.handleNextCombatTurn.bind(this);
+    CONFIG.queries[`${modulePrefix}.previousCombatTurn`] = this.handlePreviousCombatTurn.bind(this);
+    CONFIG.queries[`${modulePrefix}.endCombat`] = this.handleEndCombat.bind(this);
+
+    // Chat messages
+    CONFIG.queries[`${modulePrefix}.sendChatMessage`] = this.handleSendChatMessage.bind(this);
+
+    // Macros
+    CONFIG.queries[`${modulePrefix}.listMacros`] = this.handleListMacros.bind(this);
+    CONFIG.queries[`${modulePrefix}.executeMacro`] = this.handleExecuteMacro.bind(this);
+    CONFIG.queries[`${modulePrefix}.createMacro`] = this.handleCreateMacro.bind(this);
+
+    // Actor resource updates
+    CONFIG.queries[`${modulePrefix}.updateActorResource`] = this.handleUpdateActorResource.bind(this);
+
   }
 
   /**
@@ -1358,6 +1394,332 @@ export class QueryHandlers {
     } catch (error) {
       throw new Error(`Failed to search character items: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Handle creating a custom NPC actor without a compendium source
+   */
+  private async handleCreateNPCActor(data: {
+    name: string;
+    type?: string;
+    biography?: string;
+    img?: string;
+    tokenImg?: string;
+    flags?: Record<string, any>;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.name) throw new Error('name is required');
+
+    return await this.dataAccess.createNPCActor(data);
+  }
+
+  /**
+   * Handle updating an actor's biography field
+   */
+  private async handleUpdateActorBiography(data: {
+    actorId: string;
+    htmlContent: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.actorId) throw new Error('actorId is required');
+    if (!data.htmlContent) throw new Error('htmlContent is required');
+
+    return await this.dataAccess.updateActorBiography(data);
+  }
+
+  /**
+   * Handle setting portrait and/or token images on an actor
+   */
+  private async handleSetActorImages(data: {
+    actorId: string;
+    portraitUrl?: string;
+    tokenUrl?: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.actorId) throw new Error('actorId is required');
+    if (!data.portraitUrl && !data.tokenUrl) throw new Error('portraitUrl or tokenUrl is required');
+
+    return await this.dataAccess.setActorImages(data);
+  }
+
+  /**
+   * Handle creating a new scene with an optional background image
+   */
+  private async handleCreateScene(data: {
+    name: string;
+    backgroundImgUrl?: string;
+    description?: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.name) throw new Error('name is required');
+
+    return await this.dataAccess.createScene(data);
+  }
+
+  /**
+   * Handle updating the background image of an existing scene
+   */
+  private async handleSetSceneBackground(data: {
+    sceneId: string;
+    imgUrl: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.sceneId) throw new Error('sceneId is required');
+    if (!data.imgUrl) throw new Error('imgUrl is required');
+
+    return await this.dataAccess.setSceneBackground(data);
+  }
+
+  /**
+   * Handle finding a scene by name (fuzzy match)
+   */
+  private async handleFindScene(data: { name: string }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.name) throw new Error('name is required');
+
+    return await this.dataAccess.findSceneByName(data.name);
+  }
+
+  /**
+   * Handle finding a journal entry by name with optional folder filter
+   */
+  private async handleFindJournal(data: {
+    name: string;
+    folderName?: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.name) throw new Error('name is required');
+
+    return await this.dataAccess.findJournalByName(data.name, data.folderName);
+  }
+
+  /**
+   * Handle appending a new page to an existing journal entry
+   */
+  private async handleAddJournalPage(data: {
+    journalId: string;
+    pageName: string;
+    content: string;
+    gmOnly?: boolean;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.journalId) throw new Error('journalId is required');
+    if (!data.pageName) throw new Error('pageName is required');
+    if (!data.content) throw new Error('content is required');
+
+    return await this.dataAccess.addPageToJournal(data);
+  }
+
+  /**
+   * Handle creating a folder or nested folder path
+   */
+  private async handleCreateFolder(data: {
+    path: string;
+    type: 'Actor' | 'JournalEntry' | 'Scene';
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+
+    this.dataAccess.validateFoundryState();
+    if (!data.path) throw new Error('path is required');
+    if (!data.type) throw new Error('type is required');
+
+    const folderId = await this.dataAccess.getOrCreateNestedFolder(data.path, data.type);
+    return { success: folderId !== null, folderId };
+  }
+
+  // ===== COMBAT TRACKER HANDLERS =====
+
+  /**
+   * Handle getting the current combat state
+   */
+  private async handleGetCombatState(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.getCombatState();
+  }
+
+  /**
+   * Handle creating a new combat encounter
+   */
+  private async handleCreateCombat(data: {
+    tokenIds?: string[];
+    rollInitiative?: boolean;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.createCombat(data);
+  }
+
+  /**
+   * Handle adding tokens to the active combat encounter
+   */
+  private async handleAddCombatants(data: { tokenIds: string[] }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    if (!data.tokenIds?.length) throw new Error('tokenIds is required');
+    return await this.dataAccess.addCombatants(data);
+  }
+
+  /**
+   * Handle setting a combatant's initiative value
+   */
+  private async handleSetCombatantInitiative(data: {
+    combatantId: string;
+    initiative: number;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    if (!data.combatantId) throw new Error('combatantId is required');
+    if (data.initiative === undefined) throw new Error('initiative is required');
+    return await this.dataAccess.setCombatantInitiative(data);
+  }
+
+  /**
+   * Handle rolling initiative for combatants
+   */
+  private async handleRollCombatInitiative(data: { ids?: string[] }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.rollCombatInitiative(data);
+  }
+
+  /**
+   * Handle advancing to the next combat turn
+   */
+  private async handleNextCombatTurn(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.nextCombatTurn();
+  }
+
+  /**
+   * Handle going back to the previous combat turn
+   */
+  private async handlePreviousCombatTurn(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.previousCombatTurn();
+  }
+
+  /**
+   * Handle ending the active combat encounter
+   */
+  private async handleEndCombat(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.endCombat();
+  }
+
+  // ===== CHAT MESSAGE HANDLERS =====
+
+  /**
+   * Handle sending a message to the Foundry VTT chat log
+   */
+  private async handleSendChatMessage(data: {
+    content: string;
+    type?: 'chat' | 'ooc' | 'emote' | 'whisper';
+    speakerName?: string;
+    whisperTargets?: string[];
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    if (!data.content) throw new Error('content is required');
+    return await this.dataAccess.sendChatMessage(data);
+  }
+
+  // ===== MACRO HANDLERS =====
+
+  /**
+   * Handle listing all available macros
+   */
+  private async handleListMacros(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.listMacros();
+  }
+
+  /**
+   * Handle executing a macro by name or ID
+   */
+  private async handleExecuteMacro(data: { identifier: string }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    if (!data.identifier) throw new Error('identifier is required');
+    return await this.dataAccess.executeMacro(data);
+  }
+
+  /**
+   * Handle creating a new macro
+   */
+  private async handleCreateMacro(data: {
+    name: string;
+    type: 'chat' | 'script';
+    command: string;
+    img?: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    if (!data.name) throw new Error('name is required');
+    if (!data.command) throw new Error('command is required');
+    return await this.dataAccess.createMacro(data);
+  }
+
+  // ===== ACTOR RESOURCE HANDLERS =====
+
+  /**
+   * Handle updating an actor's HP or other numeric resource
+   */
+  private async handleUpdateActorResource(data: {
+    actorId: string;
+    resource: 'hp' | 'temp-hp' | 'custom';
+    value?: number;
+    delta?: number;
+    resourcePath?: string;
+  }): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    if (!data.actorId) throw new Error('actorId is required');
+    if (data.value === undefined && data.delta === undefined) throw new Error('value or delta is required');
+    if (data.resource === 'custom' && !data.resourcePath) throw new Error('resourcePath is required for custom resource');
+    return await this.dataAccess.updateActorResource(data);
   }
 
 }

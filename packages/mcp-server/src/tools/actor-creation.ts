@@ -103,6 +103,106 @@ export class ActorCreationTools {
           required: ['packId', 'entryId'],
         },
       },
+      {
+        name: 'create-npc-actor',
+        description: 'Create a custom NPC actor from scratch (not from a compendium). Use this for original NPCs with custom names, lore, and images.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Name of the NPC',
+            },
+            type: {
+              type: 'string',
+              description: 'Actor type (default: "npc"). Use the system-appropriate type, e.g. "npc" for most systems.',
+            },
+            biography: {
+              type: 'string',
+              description: 'HTML biography / lore text for the actor',
+            },
+            img: {
+              type: 'string',
+              description: 'URL or path to the portrait image',
+            },
+            tokenImg: {
+              type: 'string',
+              description: 'URL or path to the token image (defaults to portrait if omitted)',
+            },
+          },
+          required: ['name'],
+        },
+      },
+      {
+        name: 'update-actor-biography',
+        description: "Update an actor's biography/lore field with new HTML content",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            actorId: {
+              type: 'string',
+              description: 'Actor ID or name',
+            },
+            htmlContent: {
+              type: 'string',
+              description: 'New biography content (HTML)',
+            },
+          },
+          required: ['actorId', 'htmlContent'],
+        },
+      },
+      {
+        name: 'set-actor-images',
+        description: 'Set the portrait and/or token images on an actor. Supply at least one of portraitUrl or tokenUrl.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            actorId: {
+              type: 'string',
+              description: 'Actor ID or name',
+            },
+            portraitUrl: {
+              type: 'string',
+              description: 'URL or path to the portrait image (shown in the actor sheet header)',
+            },
+            tokenUrl: {
+              type: 'string',
+              description: 'URL or path to the token art (shown on the scene). Defaults to portrait if omitted.',
+            },
+          },
+          required: ['actorId'],
+        },
+      },
+      {
+        name: 'update-actor-hp',
+        description: "Update an actor's hit points (current, max, or apply a delta). Works across supported game systems (dnd5e, pf2e, swade, wfrp4e, etc.).",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            actorId: {
+              type: 'string',
+              description: 'Actor ID or name',
+            },
+            current: {
+              type: 'number',
+              description: 'Set current HP to this value directly',
+            },
+            max: {
+              type: 'number',
+              description: 'Set max HP to this value directly',
+            },
+            delta: {
+              type: 'number',
+              description: 'Add this amount to current HP (use negative values for damage)',
+            },
+            temp: {
+              type: 'number',
+              description: 'Set temporary HP (supported systems only)',
+            },
+          },
+          required: ['actorId'],
+        },
+      },
     ];
   }
 
@@ -207,11 +307,109 @@ export class ActorCreationTools {
   }
 
 
+  /**
+   * Handle creating a custom NPC actor without a compendium source
+   */
+  async handleCreateNPCActor(args: any): Promise<any> {
+    const schema = z.object({
+      name: z.string().min(1, 'Name cannot be empty'),
+      type: z.string().optional(),
+      biography: z.string().optional(),
+      img: z.string().optional(),
+      tokenImg: z.string().optional(),
+    });
 
+    const params = schema.parse(args);
+    this.logger.info('Creating custom NPC actor', { name: params.name });
 
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createNPCActor', params);
+      return {
+        success: true,
+        id: result.id,
+        name: result.name,
+        type: result.type,
+        message: `Created NPC actor "${result.name}" (id: ${result.id})`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'create-npc-actor', 'NPC creation');
+    }
+  }
 
+  /**
+   * Handle updating an actor's biography field
+   */
+  async handleUpdateActorBiography(args: any): Promise<any> {
+    const schema = z.object({
+      actorId: z.string().min(1),
+      htmlContent: z.string().min(1),
+    });
 
+    const params = schema.parse(args);
+    this.logger.info('Updating actor biography', { actorId: params.actorId });
 
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.updateActorBiography', params);
+      return {
+        success: result.success,
+        actorName: result.actorName,
+        message: `Updated biography for "${result.actorName}"`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'update-actor-biography', 'biography update');
+    }
+  }
+
+  /**
+   * Handle setting portrait and/or token images on an actor
+   */
+  async handleSetActorImages(args: any): Promise<any> {
+    const schema = z.object({
+      actorId: z.string().min(1),
+      portraitUrl: z.string().optional(),
+      tokenUrl: z.string().optional(),
+    }).refine(d => d.portraitUrl || d.tokenUrl, {
+      message: 'At least one of portraitUrl or tokenUrl is required',
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Setting actor images', { actorId: params.actorId });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.setActorImages', params);
+      return {
+        success: result.success,
+        actorName: result.actorName,
+        message: `Updated images for "${result.actorName}"`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'set-actor-images', 'image update');
+    }
+  }
+
+  /**
+   * Handle updating an actor's hit points
+   */
+  async handleUpdateActorHp(args: any): Promise<any> {
+    const schema = z.object({
+      actorId: z.string().min(1),
+      current: z.number().optional(),
+      max: z.number().optional(),
+      delta: z.number().optional(),
+      temp: z.number().optional(),
+    }).refine(d => d.current !== undefined || d.max !== undefined || d.delta !== undefined || d.temp !== undefined, {
+      message: 'At least one of current, max, delta, or temp is required',
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Updating actor HP', { actorId: params.actorId });
+
+    try {
+      return await this.foundryClient.query('foundry-mcp-bridge.updateActorResource', params);
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'update-actor-hp', 'HP update');
+    }
+  }
 
   /**
    * Format compendium entry response
@@ -240,7 +438,7 @@ export class ActorCreationTools {
   /**
    * Format simplified actor creation response
    */
-  private formatSimpleActorCreationResponse(result: any, packId: string, itemId: string, customNames: string[]): any {
+  private formatSimpleActorCreationResponse(result: any, packId: string, itemId: string, _customNames: string[]): any {
     const summary = `✅ Created ${result.totalCreated} of ${result.totalRequested} requested actors`;
     
     const details = result.actors.map((actor: any) => 

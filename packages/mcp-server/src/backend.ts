@@ -34,6 +34,12 @@ import { MapGenerationTools } from './tools/map-generation.js';
 
 import { TokenManipulationTools } from './tools/token-manipulation.js';
 
+import { CombatTools } from './tools/combat.js';
+
+import { ChatTools } from './tools/chat.js';
+
+import { MacroTools } from './tools/macro.js';
+
 import { DSA5CharacterCreator } from './systems/dsa5/character-creator.js';
 
 const CONTROL_HOST = '127.0.0.1';
@@ -1078,6 +1084,12 @@ async function startBackend(): Promise<void> {
 
   const tokenManipulationTools = new TokenManipulationTools({ foundryClient, logger });
 
+  const combatTools = new CombatTools({ foundryClient, logger });
+
+  const chatTools = new ChatTools({ foundryClient, logger });
+
+  const macroTools = new MacroTools({ foundryClient, logger });
+
   // Initialize mapgen-style backend components for map generation
   let mapGenerationJobQueue: any = null;
   let mapGenerationComfyUIClient: any = null;
@@ -1311,6 +1323,12 @@ async function startBackend(): Promise<void> {
 
     ...mapGenerationTools.getToolDefinitions(),
 
+    ...combatTools.getToolDefinitions(),
+
+    ...chatTools.getToolDefinitions(),
+
+    ...macroTools.getToolDefinitions(),
+
   ];
 
   // Start Foundry connector (owns app port 31415)
@@ -1469,6 +1487,24 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'create-scene':
+
+                  result = await sceneTools.handleCreateScene(args);
+
+                  break;
+
+                case 'set-scene-background':
+
+                  result = await sceneTools.handleSetSceneBackground(args);
+
+                  break;
+
+                case 'find-scene':
+
+                  result = await sceneTools.handleFindScene(args);
+
+                  break;
+
                 // Actor creation tools
 
                 case 'create-actor-from-compendium':
@@ -1480,6 +1516,24 @@ async function startBackend(): Promise<void> {
                 case 'get-compendium-entry-full':
 
                   result = await actorCreationTools.handleGetCompendiumEntryFull(args);
+
+                  break;
+
+                case 'create-npc-actor':
+
+                  result = await actorCreationTools.handleCreateNPCActor(args);
+
+                  break;
+
+                case 'update-actor-biography':
+
+                  result = await actorCreationTools.handleUpdateActorBiography(args);
+
+                  break;
+
+                case 'set-actor-images':
+
+                  result = await actorCreationTools.handleSetActorImages(args);
 
                   break;
 
@@ -1526,6 +1580,24 @@ async function startBackend(): Promise<void> {
                 case 'search-journals':
 
                   result = await questCreationTools.handleSearchJournals(args);
+
+                  break;
+
+                case 'find-journal':
+
+                  result = await questCreationTools.handleFindJournal(args);
+
+                  break;
+
+                case 'add-journal-page':
+
+                  result = await questCreationTools.handleAddJournalPage(args);
+
+                  break;
+
+                case 'create-folder':
+
+                  result = await questCreationTools.handleCreateFolder(args);
 
                   break;
 
@@ -1632,6 +1704,92 @@ async function startBackend(): Promise<void> {
                 case 'switch-scene':
 
                   result = await mapGenerationTools.switchScene(args);
+
+                  break;
+
+                // Combat tools
+
+                case 'get-combat-state':
+
+                  result = await combatTools.handleGetCombatState(args);
+
+                  break;
+
+                case 'start-combat':
+
+                  result = await combatTools.handleStartCombat(args);
+
+                  break;
+
+                case 'add-combatants':
+
+                  result = await combatTools.handleAddCombatants(args);
+
+                  break;
+
+                case 'set-combatant-initiative':
+
+                  result = await combatTools.handleSetCombatantInitiative(args);
+
+                  break;
+
+                case 'roll-combat-initiative':
+
+                  result = await combatTools.handleRollCombatInitiative(args);
+
+                  break;
+
+                case 'next-combat-turn':
+
+                  result = await combatTools.handleNextCombatTurn(args);
+
+                  break;
+
+                case 'previous-combat-turn':
+
+                  result = await combatTools.handlePreviousCombatTurn(args);
+
+                  break;
+
+                case 'end-combat':
+
+                  result = await combatTools.handleEndCombat(args);
+
+                  break;
+
+                // Chat tools
+
+                case 'send-chat-message':
+
+                  result = await chatTools.handleSendChatMessage(args);
+
+                  break;
+
+                // Macro tools
+
+                case 'list-macros':
+
+                  result = await macroTools.handleListMacros(args);
+
+                  break;
+
+                case 'run-macro':
+
+                  result = await macroTools.handleRunMacro(args);
+
+                  break;
+
+                case 'create-macro':
+
+                  result = await macroTools.handleCreateMacro(args);
+
+                  break;
+
+                // Actor HP update
+
+                case 'update-actor-hp':
+
+                  result = await actorCreationTools.handleUpdateActorHp(args);
 
                   break;
 

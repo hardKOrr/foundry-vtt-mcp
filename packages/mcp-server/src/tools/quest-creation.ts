@@ -196,7 +196,70 @@ export class QuestCreationTools {
           },
           required: ['searchQuery']
         }
-      }
+      },
+      {
+        name: 'find-journal',
+        description: 'Find a journal entry by name (fuzzy match), with optional folder filter. Returns id, name, folder, and page count.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Journal name or partial name',
+            },
+            folderName: {
+              type: 'string',
+              description: 'Restrict search to journals inside this folder (optional)',
+            },
+          },
+          required: ['name'],
+        },
+      },
+      {
+        name: 'add-journal-page',
+        description: 'Append a new page to an existing journal entry',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            journalId: {
+              type: 'string',
+              description: 'ID of the journal entry to add the page to',
+            },
+            pageName: {
+              type: 'string',
+              description: 'Name of the new page',
+            },
+            content: {
+              type: 'string',
+              description: 'HTML content for the new page',
+            },
+            gmOnly: {
+              type: 'boolean',
+              description: 'Make this page visible to GMs only (default: false)',
+            },
+          },
+          required: ['journalId', 'pageName', 'content'],
+        },
+      },
+      {
+        name: 'create-folder',
+        description: 'Create a folder (or nested folder path) to organise Actors, JournalEntries, or Scenes. Use "/" to create nested paths, e.g. "Campaign/Session Logs".',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Folder name or slash-delimited path (e.g. "Campaign/Session Logs")',
+            },
+            type: {
+              type: 'string',
+              enum: ['Actor', 'JournalEntry', 'Scene'],
+              description: 'The type of documents this folder will hold',
+            },
+          },
+          required: ['path', 'type'],
+        },
+      },
     ];
   }
 
@@ -1221,6 +1284,82 @@ export class QuestCreationTools {
     }
     
     return objectives;
+  }
+
+  /**
+   * Handle finding a journal entry by name with optional folder filter
+   */
+  async handleFindJournal(args: any): Promise<any> {
+    const schema = z.object({
+      name: z.string().min(1, 'Name is required'),
+      folderName: z.string().optional(),
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Finding journal', { name: params.name, folderName: params.folderName });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.findJournal', params);
+      if (!result) {
+        return { found: false, message: `No journal matching "${params.name}" found` };
+      }
+      return { found: true, ...result };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'find-journal', 'journal search');
+    }
+  }
+
+  /**
+   * Handle appending a new page to an existing journal entry
+   */
+  async handleAddJournalPage(args: any): Promise<any> {
+    const schema = z.object({
+      journalId: z.string().min(1),
+      pageName: z.string().min(1),
+      content: z.string().min(1),
+      gmOnly: z.boolean().default(false),
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Adding journal page', { journalId: params.journalId, pageName: params.pageName });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.addJournalPage', params);
+      return {
+        success: result.success,
+        pageId: result.pageId,
+        pageName: result.pageName,
+        message: `Added page "${result.pageName}" to journal`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'add-journal-page', 'page creation');
+    }
+  }
+
+  /**
+   * Handle creating a folder or nested folder path for organising world content
+   */
+  async handleCreateFolder(args: any): Promise<any> {
+    const schema = z.object({
+      path: z.string().min(1),
+      type: z.enum(['Actor', 'JournalEntry', 'Scene']),
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Creating folder', { path: params.path, type: params.type });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createFolder', params);
+      return {
+        success: result.success,
+        folderId: result.folderId,
+        message: result.success
+          ? `Created folder "${params.path}" for ${params.type}`
+          : `Failed to create folder "${params.path}"`,
+      };
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'create-folder', 'folder creation');
+    }
   }
 
   /**

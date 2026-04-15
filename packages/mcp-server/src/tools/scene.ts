@@ -48,6 +48,60 @@ export class SceneTools {
           properties: {},
         },
       },
+      {
+        name: 'create-scene',
+        description: 'Create a new Foundry VTT scene with an optional background image',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Name for the new scene',
+            },
+            backgroundImgUrl: {
+              type: 'string',
+              description: 'URL or Foundry-relative path for the background image (optional)',
+            },
+            description: {
+              type: 'string',
+              description: 'Short description stored in scene flags (optional)',
+            },
+          },
+          required: ['name'],
+        },
+      },
+      {
+        name: 'set-scene-background',
+        description: 'Update the background image of an existing scene',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sceneId: {
+              type: 'string',
+              description: 'Scene ID or name (fuzzy match supported)',
+            },
+            imgUrl: {
+              type: 'string',
+              description: 'URL or Foundry-relative path for the new background image',
+            },
+          },
+          required: ['sceneId', 'imgUrl'],
+        },
+      },
+      {
+        name: 'find-scene',
+        description: 'Find a scene by name (fuzzy match). Returns id, name, and active status.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Scene name or partial name to search for',
+            },
+          },
+          required: ['name'],
+        },
+      },
     ];
   }
 
@@ -94,6 +148,72 @@ export class SceneTools {
     } catch (error) {
       this.logger.error('Failed to get world information', error);
       throw new Error(`Failed to get world information: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleCreateScene(args: any): Promise<any> {
+    const schema = z.object({
+      name: z.string().min(1, 'Name cannot be empty'),
+      backgroundImgUrl: z.string().optional(),
+      description: z.string().optional(),
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Creating scene', { name: params.name });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.createScene', params);
+      return {
+        success: true,
+        id: result.id,
+        name: result.name,
+        message: `Created scene "${result.name}" (id: ${result.id})`,
+      };
+    } catch (error) {
+      this.logger.error('Failed to create scene', error);
+      throw new Error(`Failed to create scene: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleSetSceneBackground(args: any): Promise<any> {
+    const schema = z.object({
+      sceneId: z.string().min(1),
+      imgUrl: z.string().min(1),
+    });
+
+    const params = schema.parse(args);
+    this.logger.info('Setting scene background', { sceneId: params.sceneId });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.setSceneBackground', params);
+      return {
+        success: result.success,
+        sceneName: result.sceneName,
+        message: `Updated background for scene "${result.sceneName}"`,
+      };
+    } catch (error) {
+      this.logger.error('Failed to set scene background', error);
+      throw new Error(`Failed to set scene background: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async handleFindScene(args: any): Promise<any> {
+    const schema = z.object({
+      name: z.string().min(1),
+    });
+
+    const { name } = schema.parse(args);
+    this.logger.info('Finding scene', { name });
+
+    try {
+      const result = await this.foundryClient.query('foundry-mcp-bridge.findScene', { name });
+      if (!result) {
+        return { found: false, message: `No scene matching "${name}" found` };
+      }
+      return { found: true, ...result };
+    } catch (error) {
+      this.logger.error('Failed to find scene', error);
+      throw new Error(`Failed to find scene: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

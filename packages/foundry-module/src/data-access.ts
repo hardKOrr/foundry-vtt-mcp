@@ -3144,13 +3144,14 @@ export class FoundryDataAccess {
   /**
    * List all journal entries with page metadata
    */
-  async listJournals(): Promise<Array<{ id: string; name: string; type: string; pageCount: number; pages: Array<{ id: string; name: string; type: string }> }>> {
+  async listJournals(): Promise<Array<{ id: string; name: string; type: string; folderName?: string; pageCount: number; pages: Array<{ id: string; name: string; type: string }> }>> {
     this.validateFoundryState();
 
     return game.journal.map((journal: any) => ({
       id: journal.id || '',
       name: journal.name || '',
       type: 'JournalEntry',
+      folderName: journal.folder?.name || undefined,
       pageCount: journal.pages?.size || 0,
       pages: journal.pages?.map((page: any) => ({
         id: page.id || '',
@@ -5745,6 +5746,734 @@ export class FoundryDataAccess {
 
       throw new Error(`Failed to use item "${item.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  // ===== CUSTOM ACTOR / SCENE / JOURNAL WRITE OPERATIONS =====
+
+  /**
+   * Create a custom NPC actor without a compendium source
+   */
+  async createNPCActor(request: {
+    name: string;
+    type?: string;
+    biography?: string;
+    img?: string;
+    tokenImg?: string;
+    flags?: Record<string, any>;
+  }): Promise<{ id: string; name: string; type: string }> {
+    this.validateFoundryState();
+
+    const permissionCheck = permissionManager.checkWritePermission('createActor', { quantity: 1 });
+    if (!permissionCheck.allowed) {
+      throw new Error(`Actor creation denied: ${permissionCheck.reason}`);
+    }
+
+    try {
+      const systemId = (game.system as any).id;
+      const actorType = request.type || 'npc';
+
+      // Build biography update path (system-dependent)
+      const biographyPath = this.getBiographyPath(systemId);
+
+      const actorData: Record<string, any> = {
+        name: request.name,
+        type: actorType,
+        img: request.img || 'icons/svg/mystery-man.svg',
+        prototypeToken: {
+          name: request.name,
+          texture: {
+            src: request.tokenImg || request.img || 'icons/svg/mystery-man.svg',
+          },
+        },
+        flags: {
+          'foundry-mcp-bridge': {
+            mcpGenerated: true,
+            createdAt: new Date().toISOString(),
+            ...(request.flags || {}),
+          },
+        },
+      };
+
+      // Set biography via system-specific path
+      if (request.biography && biographyPath) {
+        actorData.system = this.setNestedValue({}, biographyPath, request.biography);
+      }
+
+      const actor = await Actor.create(actorData as any);
+      if (!actor) throw new Error('Failed to create actor');
+
+      this.auditLog('createNPCActor', request, 'success');
+      return { id: actor.id!, name: actor.name!, type: actor.type };
+    } catch (error) {
+      this.auditLog('createNPCActor', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Update an actor's biography/lore text
+   */
+  async updateActorBiography(request: {
+    actorId: string;
+    htmlContent: string;
+  }): Promise<{ success: boolean; actorName: string }> {
+    this.validateFoundryState();
+
+    const actor = this.findActorByIdentifier(request.actorId);
+    if (!actor) throw new Error(`Actor not found: ${request.actorId}`);
+
+    try {
+      const systemId = (game.system as any).id;
+      const biographyPath = this.getBiographyPath(systemId);
+
+      if (!biographyPath) {
+        throw new Error(`Biography field path unknown for system: ${systemId}`);
+      }
+
+      const updateData = this.setNestedValue({}, biographyPath, request.htmlContent);
+      await actor.update({ system: updateData.system || updateData });
+
+      this.auditLog('updateActorBiography', { actorId: actor.id }, 'success');
+      return { success: true, actorName: actor.name };
+    } catch (error) {
+      this.auditLog('updateActorBiography', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Set portrait and/or token images on an actor
+   */
+  async setActorImages(request: {
+    actorId: string;
+    portraitUrl?: string;
+    tokenUrl?: string;
+  }): Promise<{ success: boolean; actorName: string }> {
+    this.validateFoundryState();
+
+    const actor = this.findActorByIdentifier(request.actorId);
+    if (!actor) throw new Error(`Actor not found: ${request.actorId}`);
+
+    if (!request.portraitUrl && !request.tokenUrl) {
+      throw new Error('At least one of portraitUrl or tokenUrl is required');
+    }
+
+    try {
+      const updateData: Record<string, any> = {};
+      if (request.portraitUrl) {
+        updateData.img = request.portraitUrl;
+      }
+      if (request.tokenUrl) {
+        updateData['prototypeToken.texture.src'] = request.tokenUrl;
+      } else if (request.portraitUrl) {
+        // Mirror portrait to token if only portrait provided
+        updateData['prototypeToken.texture.src'] = request.portraitUrl;
+      }
+
+      await actor.update(updateData);
+
+      this.auditLog('setActorImages', { actorId: actor.id }, 'success');
+      return { success: true, actorName: actor.name };
+    } catch (error) {
+      this.auditLog('setActorImages', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new scene with an optional background image
+   */
+  async createScene(request: {
+    name: string;
+    backgroundImgUrl?: string;
+    description?: string;
+  }): Promise<{ id: string; name: string }> {
+    this.validateFoundryState();
+
+    const permissionCheck = permissionManager.checkWritePermission('modifyScene', { quantity: 1 });
+    if (!permissionCheck.allowed) {
+      throw new Error(`Scene creation denied: ${permissionCheck.reason}`);
+    }
+
+    try {
+      const sceneData: Record<string, any> = {
+        name: request.name,
+        flags: {
+          'foundry-mcp-bridge': {
+            mcpGenerated: true,
+            createdAt: new Date().toISOString(),
+            description: request.description || '',
+          },
+        },
+      };
+
+      if (request.backgroundImgUrl) {
+        sceneData.background = { src: request.backgroundImgUrl };
+      }
+
+      const scene = await Scene.create(sceneData as any);
+      if (!scene) throw new Error('Failed to create scene');
+
+      this.auditLog('createScene', request, 'success');
+      return { id: scene.id!, name: scene.name! };
+    } catch (error) {
+      this.auditLog('createScene', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Set or update a scene's background image
+   */
+  async setSceneBackground(request: {
+    sceneId: string;
+    imgUrl: string;
+  }): Promise<{ success: boolean; sceneName: string }> {
+    this.validateFoundryState();
+
+    const scene = game.scenes?.get(request.sceneId) ||
+                  game.scenes?.getName(request.sceneId) ||
+                  Array.from(game.scenes || []).find((s: any) =>
+                    s.name?.toLowerCase().includes(request.sceneId.toLowerCase())
+                  );
+
+    if (!scene) throw new Error(`Scene not found: ${request.sceneId}`);
+
+    try {
+      await (scene as any).update({ background: { src: request.imgUrl } });
+
+      this.auditLog('setSceneBackground', { sceneId: (scene as any).id }, 'success');
+      return { success: true, sceneName: (scene as any).name };
+    } catch (error) {
+      this.auditLog('setSceneBackground', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Find a scene by name (fuzzy match)
+   */
+  async findSceneByName(name: string): Promise<{ id: string; name: string; active: boolean } | null> {
+    this.validateFoundryState();
+
+    const scene = game.scenes?.getName(name) ||
+                  Array.from(game.scenes || []).find((s: any) =>
+                    s.name?.toLowerCase().includes(name.toLowerCase())
+                  );
+
+    if (!scene) return null;
+    return {
+      id: (scene as any).id!,
+      name: (scene as any).name!,
+      active: (scene as any).active,
+    };
+  }
+
+  // ===== JOURNAL WRITE OPERATIONS =====
+
+  /**
+   * Find a journal entry by name with optional folder filter (fuzzy)
+   */
+  async findJournalByName(name: string, folderName?: string): Promise<{ id: string; name: string; folderName?: string; pageCount: number } | null> {
+    this.validateFoundryState();
+
+    let journals: any[] = Array.from(game.journal || []);
+
+    if (folderName) {
+      journals = journals.filter((j: any) =>
+        j.folder?.name?.toLowerCase().includes(folderName.toLowerCase())
+      );
+    }
+
+    const journal = journals.find((j: any) =>
+      j.name?.toLowerCase() === name.toLowerCase()
+    ) || journals.find((j: any) =>
+      j.name?.toLowerCase().includes(name.toLowerCase())
+    );
+
+    if (!journal) return null;
+    return {
+      id: journal.id,
+      name: journal.name,
+      folderName: journal.folder?.name || undefined,
+      pageCount: journal.pages?.size || 0,
+    };
+  }
+
+  /**
+   * Append a new page to an existing journal entry
+   */
+  async addPageToJournal(request: {
+    journalId: string;
+    pageName: string;
+    content: string;
+    gmOnly?: boolean;
+  }): Promise<{ success: boolean; pageId: string; pageName: string }> {
+    this.validateFoundryState();
+
+    const journal = game.journal.get(request.journalId);
+    if (!journal) throw new Error(`Journal not found: ${request.journalId}`);
+
+    try {
+      const pageData: Record<string, any> = {
+        type: 'text',
+        name: request.pageName,
+        text: { content: request.content },
+      };
+
+      if (request.gmOnly) {
+        pageData.ownership = { default: 0 };
+      }
+
+      const pages = await (journal as any).createEmbeddedDocuments('JournalEntryPage', [pageData]);
+      const page = pages?.[0];
+      if (!page) throw new Error('Failed to create journal page');
+
+      this.auditLog('addPageToJournal', { journalId: request.journalId, pageName: request.pageName }, 'success');
+      return { success: true, pageId: page.id, pageName: page.name };
+    } catch (error) {
+      this.auditLog('addPageToJournal', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Get or create a nested folder path, e.g. "Eclipse/Missions"
+   * Creates parent folders as needed.
+   */
+  async getOrCreateNestedFolder(path: string, type: 'Actor' | 'JournalEntry' | 'Scene'): Promise<string | null> {
+    try {
+      const parts = path.split('/').map(p => p.trim()).filter(Boolean);
+      if (parts.length === 0) return null;
+
+      // Single-level: delegate to existing method
+      if (parts.length === 1) {
+        return await this.getOrCreateFolder(parts[0], type as 'Actor' | 'JournalEntry');
+      }
+
+      let parentId: string | null = null;
+      for (const part of parts) {
+        const existing = Array.from(game.folders || []).find((f: any) =>
+          f.name === part && f.type === type && (f.parent?.id || null) === parentId
+        ) as any;
+
+        if (existing) {
+          parentId = existing.id;
+        } else {
+          const folderData = {
+            name: part,
+            type,
+            parent: parentId,
+            flags: {
+              'foundry-mcp-bridge': { mcpGenerated: true, createdAt: new Date().toISOString() },
+            },
+          };
+          const folder = await Folder.create(folderData) as any;
+          parentId = folder?.id || null;
+        }
+      }
+      return parentId;
+    } catch (error) {
+      console.warn(`[${this.moduleId}] Failed to create nested folder "${path}":`, error);
+      return null;
+    }
+  }
+
+  // ===== HELPERS =====
+
+  /**
+   * Get the system-specific biography field path for actor.update()
+   */
+  private getBiographyPath(systemId: string): string {
+    // Most Foundry systems use one of these paths
+    const knownPaths: Record<string, string> = {
+      'dnd5e': 'details.biography.value',
+      'pf2e': 'details.biography.value',
+      'sf2e': 'details.biography.value',
+      'starfinder': 'details.biography.value',
+      'swade': 'details.biography.value',
+      'wfrp4e': 'details.biography.value',
+      'sfrpg': 'details.biography.value',  // Starfinder 1e
+    };
+    return knownPaths[systemId] || 'details.biography.value';
+  }
+
+  /**
+   * Set a dot-notation key on a plain object, returning the nested structure.
+   * E.g. setNestedValue({}, 'details.biography.value', 'text') → { details: { biography: { value: 'text' } } }
+   */
+  private setNestedValue(obj: Record<string, any>, path: string, value: any): Record<string, any> {
+    const parts = path.split('.');
+    let current = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!current[parts[i]] || typeof current[parts[i]] !== 'object') {
+        current[parts[i]] = {};
+      }
+      current = current[parts[i]];
+    }
+    current[parts[parts.length - 1]] = value;
+    return obj;
+  }
+
+  // ===== COMBAT TRACKER =====
+
+  /**
+   * Get the state of the active combat encounter
+   */
+  async getCombatState(): Promise<any> {
+    this.validateFoundryState();
+
+    const combat = (game.combat as any);
+    if (!combat) {
+      return { active: false, message: 'No active combat encounter' };
+    }
+
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * Create a combat encounter and optionally add tokens from the current scene
+   */
+  async createCombat(request: {
+    tokenIds?: string[];
+    rollInitiative?: boolean;
+  }): Promise<any> {
+    this.validateFoundryState();
+
+    try {
+      const scene = (game.scenes as any)?.active;
+      if (!scene) throw new Error('No active scene');
+
+      const combat = await (Combat as any).create({ scene: scene.id });
+      if (!combat) throw new Error('Failed to create combat');
+
+      if (request.tokenIds?.length) {
+        const combatantData = request.tokenIds.map((tokenId: string) => {
+          const token = scene.tokens.get(tokenId);
+          return { tokenId, actorId: token?.actorId };
+        }).filter((d: any) => d.tokenId);
+
+        await combat.createEmbeddedDocuments('Combatant', combatantData);
+      }
+
+      await combat.activate();
+
+      if (request.rollInitiative) {
+        await combat.rollAll();
+      }
+
+      this.auditLog('createCombat', request, 'success');
+      return this.formatCombatState(combat);
+    } catch (error) {
+      this.auditLog('createCombat', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  /**
+   * Add tokens to the active combat encounter
+   */
+  async addCombatants(request: { tokenIds: string[] }): Promise<any> {
+    this.validateFoundryState();
+
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+
+    const scene = (game.scenes as any)?.active;
+    if (!scene) throw new Error('No active scene');
+
+    const combatantData = request.tokenIds.map((tokenId: string) => {
+      const token = scene.tokens.get(tokenId);
+      return { tokenId, actorId: token?.actorId };
+    }).filter((d: any) => d.tokenId);
+
+    await combat.createEmbeddedDocuments('Combatant', combatantData);
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * Set a combatant's initiative value
+   */
+  async setCombatantInitiative(request: {
+    combatantId: string;
+    initiative: number;
+  }): Promise<any> {
+    this.validateFoundryState();
+
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+
+    await combat.setInitiative(request.combatantId, request.initiative);
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * Roll initiative for all combatants or a specific subset
+   */
+  async rollCombatInitiative(request: { ids?: string[] }): Promise<any> {
+    this.validateFoundryState();
+
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+
+    if (request.ids?.length) {
+      await combat.rollInitiative(request.ids);
+    } else {
+      await combat.rollAll();
+    }
+
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * Advance to the next turn in the combat tracker
+   */
+  async nextCombatTurn(): Promise<any> {
+    this.validateFoundryState();
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+    await combat.nextTurn();
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * Go back to the previous turn in the combat tracker
+   */
+  async previousCombatTurn(): Promise<any> {
+    this.validateFoundryState();
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+    await combat.previousTurn();
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * End the active combat encounter
+   */
+  async endCombat(): Promise<{ success: boolean }> {
+    this.validateFoundryState();
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+    await combat.endCombat();
+    this.auditLog('endCombat', {}, 'success');
+    return { success: true };
+  }
+
+  private formatCombatState(combat: any): any {
+    const combatants = Array.from(combat.combatants || []).map((c: any) => ({
+      id: c.id,
+      name: c.name || c.token?.name || 'Unknown',
+      initiative: c.initiative,
+      actorId: c.actorId,
+      tokenId: c.tokenId,
+      defeated: c.defeated,
+      hidden: c.hidden,
+      active: c.id === combat.combatant?.id,
+    }));
+
+    return {
+      active: true,
+      id: combat.id,
+      round: combat.round,
+      turn: combat.turn,
+      started: combat.started,
+      currentCombatant: combat.combatant ? {
+        id: combat.combatant.id,
+        name: combat.combatant.name || combat.combatant.token?.name || 'Unknown',
+        actorId: combat.combatant.actorId,
+        tokenId: combat.combatant.tokenId,
+      } : null,
+      combatants,
+    };
+  }
+
+  // ===== CHAT MESSAGES =====
+
+  /**
+   * Send a message to the Foundry VTT chat log
+   */
+  async sendChatMessage(request: {
+    content: string;
+    type?: 'chat' | 'ooc' | 'emote' | 'whisper';
+    speakerName?: string;
+    whisperTargets?: string[];
+  }): Promise<{ success: boolean; id: string }> {
+    this.validateFoundryState();
+
+    try {
+      const typeMap: Record<string, number> = { chat: 0, ooc: 1, emote: 2, whisper: 3 };
+      const msgType = typeMap[request.type || 'chat'] ?? 0;
+
+      // Resolve whisper user IDs from names if provided
+      let whisper: string[] = [];
+      if (request.type === 'whisper' && request.whisperTargets?.length) {
+        whisper = request.whisperTargets.map((t: string) => {
+          const user = game.users?.find((u: any) =>
+            u.id === t || u.name?.toLowerCase() === t.toLowerCase()
+          );
+          return user?.id || t;
+        }).filter(Boolean);
+      }
+
+      const speaker = request.speakerName
+        ? { alias: request.speakerName }
+        : (ChatMessage as any).getSpeaker();
+
+      const msg = await (ChatMessage as any).create({
+        content: request.content,
+        type: msgType,
+        speaker,
+        whisper: whisper.length ? whisper : undefined,
+      });
+
+      return { success: true, id: msg?.id || '' };
+    } catch (error) {
+      throw new Error(`Failed to send chat message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // ===== MACROS =====
+
+  /**
+   * List all macros available in the world
+   */
+  async listMacros(): Promise<Array<{ id: string; name: string; type: string; img?: string; author: string }>> {
+    this.validateFoundryState();
+
+    return Array.from((game.macros as any) || []).map((m: any) => ({
+      id: m.id || '',
+      name: m.name || '',
+      type: m.type || 'chat',
+      img: m.img || undefined,
+      author: m.author?.name || 'Unknown',
+    }));
+  }
+
+  /**
+   * Execute an existing macro by name or ID
+   */
+  async executeMacro(request: { identifier: string }): Promise<{ success: boolean; name: string }> {
+    this.validateFoundryState();
+
+    const macro = (game.macros as any)?.get(request.identifier) ||
+                  Array.from((game.macros as any) || []).find((m: any) =>
+                    m.name?.toLowerCase() === request.identifier.toLowerCase()
+                  );
+
+    if (!macro) throw new Error(`Macro not found: ${request.identifier}`);
+
+    await (macro as any).execute();
+    this.auditLog('executeMacro', { identifier: request.identifier, name: (macro as any).name }, 'success');
+    return { success: true, name: (macro as any).name };
+  }
+
+  /**
+   * Create a new macro
+   */
+  async createMacro(request: {
+    name: string;
+    type: 'chat' | 'script';
+    command: string;
+    img?: string;
+  }): Promise<{ id: string; name: string }> {
+    this.validateFoundryState();
+
+    try {
+      const macro = await (Macro as any).create({
+        name: request.name,
+        type: request.type,
+        command: request.command,
+        img: request.img || 'icons/svg/dice-target.svg',
+        flags: {
+          'foundry-mcp-bridge': { mcpGenerated: true, createdAt: new Date().toISOString() },
+        },
+      });
+
+      if (!macro) throw new Error('Failed to create macro');
+
+      this.auditLog('createMacro', { name: request.name, type: request.type }, 'success');
+      return { id: macro.id!, name: macro.name! };
+    } catch (error) {
+      this.auditLog('createMacro', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
+  }
+
+  // ===== ACTOR RESOURCE UPDATES =====
+
+  /**
+   * Update an actor's HP or other numeric resource
+   */
+  async updateActorResource(request: {
+    actorId: string;
+    resource: 'hp' | 'temp-hp' | 'custom';
+    value?: number;
+    delta?: number;
+    resourcePath?: string;
+  }): Promise<{ success: boolean; actorName: string; newValue: number; oldValue: number }> {
+    this.validateFoundryState();
+
+    const actor = this.findActorByIdentifier(request.actorId);
+    if (!actor) throw new Error(`Actor not found: ${request.actorId}`);
+
+    const systemId = (game.system as any).id;
+    const hpPaths = this.getHPPaths(systemId);
+
+    let path: string;
+    if (request.resource === 'custom' && request.resourcePath) {
+      path = request.resourcePath;
+    } else if (request.resource === 'temp-hp' && hpPaths.temp) {
+      path = hpPaths.temp;
+    } else {
+      path = hpPaths.value;
+    }
+
+    // Read current value
+    const currentValue = this.getNestedValue((actor as any).system, path.replace('attributes.', '').replace('status.', '')) ?? 0;
+
+    let newValue: number;
+    if (request.delta !== undefined) {
+      newValue = currentValue + request.delta;
+    } else if (request.value !== undefined) {
+      newValue = request.value;
+    } else {
+      throw new Error('Either value or delta is required');
+    }
+
+    // Clamp to max HP if healing (delta > 0 or absolute value)
+    if (request.resource === 'hp') {
+      const maxPath = hpPaths.max;
+      const maxValue = this.getNestedValue((actor as any).system, maxPath.replace('attributes.', '').replace('status.', '')) ?? Infinity;
+      newValue = Math.min(newValue, maxValue as number);
+      newValue = Math.max(newValue, 0);
+    }
+
+    const updateData = this.setNestedValue({}, `system.${path}`, newValue);
+    await (actor as any).update(updateData);
+
+    this.auditLog('updateActorResource', { actorId: (actor as any).id, resource: request.resource, newValue }, 'success');
+    return {
+      success: true,
+      actorName: (actor as any).name,
+      oldValue: currentValue,
+      newValue,
+    };
+  }
+
+  private getHPPaths(systemId: string): { value: string; max: string; temp?: string } {
+    const known: Record<string, { value: string; max: string; temp?: string }> = {
+      'dnd5e':    { value: 'attributes.hp.value', max: 'attributes.hp.max', temp: 'attributes.hp.temp' },
+      'pf2e':     { value: 'attributes.hp.value', max: 'attributes.hp.max' },
+      'sf2e':     { value: 'attributes.hp.value', max: 'attributes.hp.max' },
+      'sfrpg':    { value: 'attributes.hp.value', max: 'attributes.hp.max', temp: 'attributes.hp.temp' },
+      'swade':    { value: 'wounds.value',         max: 'wounds.max' },
+      'wfrp4e':   { value: 'status.wounds.value',  max: 'status.wounds.max' },
+    };
+    return known[systemId] || { value: 'attributes.hp.value', max: 'attributes.hp.max' };
+  }
+
+  private getNestedValue(obj: any, path: string): any {
+    return path.split('.').reduce((cur, key) => cur?.[key], obj);
   }
 
 }
