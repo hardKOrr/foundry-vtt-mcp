@@ -6222,10 +6222,12 @@ export class FoundryDataAccess {
     const combat = (game.combat as any);
     if (!combat) throw new Error('No active combat encounter');
 
+    // skipDialog: true uses each actor's configured initiative statistic
+    // (set on the actor sheet) without prompting. Works for PF2e and SF2e.
     if (request.ids?.length) {
-      await combat.rollInitiative(request.ids);
+      await combat.rollInitiative(request.ids, { skipDialog: true });
     } else {
-      await combat.rollAll();
+      await combat.rollAll({ skipDialog: true });
     }
 
     return this.formatCombatState(combat);
