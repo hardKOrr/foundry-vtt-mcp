@@ -124,9 +124,11 @@ export class QueryHandlers {
     // Combat tracker
     CONFIG.queries[`${modulePrefix}.getCombatState`] = this.handleGetCombatState.bind(this);
     CONFIG.queries[`${modulePrefix}.createCombat`] = this.handleCreateCombat.bind(this);
+    CONFIG.queries[`${modulePrefix}.startCombat`] = this.handleStartCombat.bind(this);
     CONFIG.queries[`${modulePrefix}.addCombatants`] = this.handleAddCombatants.bind(this);
     CONFIG.queries[`${modulePrefix}.setCombatantInitiative`] = this.handleSetCombatantInitiative.bind(this);
     CONFIG.queries[`${modulePrefix}.rollCombatInitiative`] = this.handleRollCombatInitiative.bind(this);
+    CONFIG.queries[`${modulePrefix}.rollNPCInitiative`] = this.handleRollNPCInitiative.bind(this);
     CONFIG.queries[`${modulePrefix}.nextCombatTurn`] = this.handleNextCombatTurn.bind(this);
     CONFIG.queries[`${modulePrefix}.previousCombatTurn`] = this.handlePreviousCombatTurn.bind(this);
     CONFIG.queries[`${modulePrefix}.endCombat`] = this.handleEndCombat.bind(this);
@@ -1641,6 +1643,27 @@ export class QueryHandlers {
     if (!gmCheck.allowed) return { error: 'Access denied', success: false };
     this.dataAccess.validateFoundryState();
     return await this.dataAccess.endCombat();
+  }
+
+  /**
+   * Handle starting the active combat encounter (sets round 1, locks order).
+   * Call after initiative has been rolled.
+   */
+  private async handleStartCombat(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.startCombat();
+  }
+
+  /**
+   * Handle rolling initiative for NPC combatants only (skipDialog).
+   */
+  private async handleRollNPCInitiative(_data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) return { error: 'Access denied', success: false };
+    this.dataAccess.validateFoundryState();
+    return await this.dataAccess.rollNPCInitiative();
   }
 
   // ===== CHAT MESSAGE HANDLERS =====

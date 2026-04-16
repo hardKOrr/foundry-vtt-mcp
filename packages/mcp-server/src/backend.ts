@@ -1759,6 +1759,18 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'roll-npc-initiative':
+
+                  result = await combatTools.handleRollNPCInitiative(args);
+
+                  break;
+
+                case 'begin-combat':
+
+                  result = await combatTools.handleBeginCombat(args);
+
+                  break;
+
                 // Chat tools
 
                 case 'send-chat-message':

@@ -6163,10 +6163,10 @@ export class FoundryDataAccess {
         await combat.createEmbeddedDocuments('Combatant', combatantData);
       }
 
+      // activate() makes this the active combat in the tracker UI.
+      // Do NOT call startCombat() here — that locks in the initiative order
+      // before anyone has rolled. Call startCombat separately after initiative.
       await combat.activate();
-      // startCombat() sets round 1 turn 0 so currentCombatant is never null
-      // on the first nextTurn() call
-      await combat.startCombat();
 
       this.auditLog('createCombat', request, 'success');
       return this.formatCombatState(combat);
@@ -6174,6 +6174,30 @@ export class FoundryDataAccess {
       this.auditLog('createCombat', request, 'failure', error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
+  }
+
+  /**
+   * Start the active combat encounter (sets round 1, locks initiative order).
+   * Call this after all initiative rolls are done.
+   */
+  async startCombat(): Promise<any> {
+    this.validateFoundryState();
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+    await combat.startCombat();
+    return this.formatCombatState(combat);
+  }
+
+  /**
+   * Roll initiative for NPC combatants only, using each actor's configured
+   * initiative statistic (no dialog). Player combatants are skipped.
+   */
+  async rollNPCInitiative(): Promise<any> {
+    this.validateFoundryState();
+    const combat = (game.combat as any);
+    if (!combat) throw new Error('No active combat encounter');
+    await combat.rollNPC({ skipDialog: true });
+    return this.formatCombatState(combat);
   }
 
   /**

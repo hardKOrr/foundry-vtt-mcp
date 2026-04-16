@@ -82,7 +82,7 @@ export class CombatTools {
       },
       {
         name: 'roll-combat-initiative',
-        description: 'Roll initiative for all combatants, or a specific subset by combatant ID.',
+        description: 'Roll initiative for all combatants (or a specific subset by combatant ID) using each actor\'s configured initiative skill. No dialog.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -92,6 +92,22 @@ export class CombatTools {
               description: 'Combatant IDs to roll for. Omit to roll for everyone.',
             },
           },
+        },
+      },
+      {
+        name: 'roll-npc-initiative',
+        description: 'Roll initiative for NPC combatants only, using each actor\'s configured initiative skill. Player combatants are skipped. No dialog.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'begin-combat',
+        description: 'Start the active combat encounter — sets round 1 and locks in the initiative order. Call this after all initiative has been rolled.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
         },
       },
       {
@@ -239,6 +255,30 @@ export class CombatTools {
       return await this.foundryClient.query('foundry-mcp-bridge.endCombat', {});
     } catch (error) {
       this.errorHandler.handleToolError(error, 'end-combat', 'combat end');
+    }
+  }
+
+  /**
+   * Handle rolling initiative for NPC combatants only
+   */
+  async handleRollNPCInitiative(_args: any): Promise<any> {
+    this.logger.info('Rolling NPC initiative');
+    try {
+      return await this.foundryClient.query('foundry-mcp-bridge.rollNPCInitiative', {});
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'roll-npc-initiative', 'NPC initiative roll');
+    }
+  }
+
+  /**
+   * Handle starting the active combat encounter (round 1, locks order)
+   */
+  async handleBeginCombat(_args: any): Promise<any> {
+    this.logger.info('Beginning combat (round 1)');
+    try {
+      return await this.foundryClient.query('foundry-mcp-bridge.startCombat', {});
+    } catch (error) {
+      this.errorHandler.handleToolError(error, 'begin-combat', 'combat start');
     }
   }
 }
