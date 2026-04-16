@@ -34,7 +34,7 @@ export class CombatTools {
       },
       {
         name: 'start-combat',
-        description: 'Create a new combat encounter in the active scene. Optionally add specific tokens by ID and auto-roll initiative.',
+        description: 'Create a new combat encounter in the active scene and optionally add specific tokens by ID. To roll initiative, call roll-combat-initiative as a separate step after this.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -42,11 +42,6 @@ export class CombatTools {
               type: 'array',
               items: { type: 'string' },
               description: 'Token IDs to add to the encounter. Use get-current-scene to find token IDs.',
-            },
-            rollInitiative: {
-              type: 'boolean',
-              description: 'Automatically roll initiative for all combatants (default: false)',
-              default: false,
             },
           },
         },
@@ -144,7 +139,6 @@ export class CombatTools {
   async handleStartCombat(args: any): Promise<any> {
     const schema = z.object({
       tokenIds: z.array(z.string()).optional(),
-      rollInitiative: z.boolean().default(false),
     });
 
     const params = schema.parse(args);

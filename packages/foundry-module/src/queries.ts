@@ -1676,12 +1676,12 @@ export class QueryHandlers {
   /**
    * Handle executing a macro by name or ID
    */
-  private async handleExecuteMacro(data: { identifier: string }): Promise<any> {
+  private async handleExecuteMacro(data: { nameOrId: string }): Promise<any> {
     const gmCheck = this.validateGMAccess();
     if (!gmCheck.allowed) return { error: 'Access denied', success: false };
     this.dataAccess.validateFoundryState();
-    if (!data.identifier) throw new Error('identifier is required');
-    return await this.dataAccess.executeMacro(data);
+    if (!data.nameOrId) throw new Error('nameOrId is required');
+    return await this.dataAccess.executeMacro({ identifier: data.nameOrId });
   }
 
   /**

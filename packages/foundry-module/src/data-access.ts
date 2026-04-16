@@ -5612,9 +5612,14 @@ export class FoundryDataAccess {
         }
       }
 
-      // Set targets using Foundry's targeting system
+      // Set targets using Foundry v13 API (token.setTarget per token)
+      // game.user.updateTokenTargets() was removed in Foundry v13
       if (tokenIds.length > 0 && game.user) {
-        await (game.user as any).updateTokenTargets(tokenIds);
+        const scene = (game.scenes as any)?.active;
+        for (const id of tokenIds) {
+          const token = scene?.tokens?.get(id)?.object;
+          token?.setTarget(true, { user: game.user, releaseOthers: false, groupSelection: false });
+        }
         console.log(`[foundry-mcp-bridge] Set targets: ${resolvedTargetNames.join(', ')}`);
       }
     }
@@ -6089,7 +6094,7 @@ export class FoundryDataAccess {
     const knownPaths: Record<string, string> = {
       'dnd5e': 'details.biography.value',
       'pf2e': 'details.biography.value',
-      'sf2e': 'details.biography.value',
+      'sf2e': 'details.publicNotes',
       'starfinder': 'details.biography.value',
       'swade': 'details.biography.value',
       'wfrp4e': 'details.biography.value',
@@ -6136,7 +6141,6 @@ export class FoundryDataAccess {
    */
   async createCombat(request: {
     tokenIds?: string[];
-    rollInitiative?: boolean;
   }): Promise<any> {
     this.validateFoundryState();
 
@@ -6157,10 +6161,9 @@ export class FoundryDataAccess {
       }
 
       await combat.activate();
-
-      if (request.rollInitiative) {
-        await combat.rollAll({ skipDialog: true });
-      }
+      // startCombat() sets round 1 turn 0 so currentCombatant is never null
+      // on the first nextTurn() call
+      await combat.startCombat();
 
       this.auditLog('createCombat', request, 'success');
       return this.formatCombatState(combat);
@@ -6217,9 +6220,9 @@ export class FoundryDataAccess {
     if (!combat) throw new Error('No active combat encounter');
 
     if (request.ids?.length) {
-      await combat.rollInitiative(request.ids, { skipDialog: true });
+      await combat.rollInitiative(request.ids);
     } else {
-      await combat.rollAll({ skipDialog: true });
+      await combat.rollAll();
     }
 
     return this.formatCombatState(combat);
@@ -6430,8 +6433,8 @@ export class FoundryDataAccess {
       path = hpPaths.value;
     }
 
-    // Read current value
-    const currentValue = this.getNestedValue((actor as any).system, path.replace('attributes.', '').replace('status.', '')) ?? 0;
+    // Read current value using the same path as the write operation
+    const currentValue = this.getNestedValue((actor as any).system, path) ?? 0;
 
     let newValue: number;
     if (request.delta !== undefined) {
@@ -6445,7 +6448,7 @@ export class FoundryDataAccess {
     // Clamp to max HP if healing (delta > 0 or absolute value)
     if (request.resource === 'hp') {
       const maxPath = hpPaths.max;
-      const maxValue = this.getNestedValue((actor as any).system, maxPath.replace('attributes.', '').replace('status.', '')) ?? Infinity;
+      const maxValue = this.getNestedValue((actor as any).system, maxPath) ?? Infinity;
       newValue = Math.min(newValue, maxValue as number);
       newValue = Math.max(newValue, 0);
     }
