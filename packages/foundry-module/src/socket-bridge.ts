@@ -53,12 +53,11 @@ export class SocketBridge {
     const configType = this.config.connectionType || 'auto';
 
     if (configType === 'auto') {
-      // Use WebRTC for HTTPS (secure), WebSocket for HTTP (localhost)
-      // WebRTC provides P2P encrypted channel without needing SSL certificates
-      const isHttps = window.location.protocol === 'https:';
-      const type = isHttps ? 'webrtc' : 'websocket';
-      this.log(`Auto-detected connection type: ${type} (page is ${window.location.protocol})`);
-      return type;
+      // Both WebSocket and WebRTC work over HTTPS when routed through a reverse
+      // proxy (Caddy/nginx). Default to WebSocket in all cases — it's simpler,
+      // has no ICE/STUN complexity, and the proxy handles the wss:// upgrade.
+      this.log(`Auto-detected connection type: websocket (page is ${window.location.protocol})`);
+      return 'websocket';
     }
 
     // Use explicit connection type from config
@@ -95,12 +94,15 @@ export class SocketBridge {
   private async connectWebSocket(): Promise<void> {
     this.activeConnectionType = 'websocket';
 
-    // WebSocket for HTTP localhost connections only
-    const protocol = 'ws';
-    const host = this.config.serverHost;
-    this.log(`Using WebSocket (${protocol}://${host}:${this.config.serverPort})`);
+    // When served over HTTPS, connect via wss:// on the same host so the
+    // reverse proxy (Caddy/nginx) can forward the WebSocket to the MCP server.
+    // When served over HTTP, connect directly to the configured host:port.
+    const isHttps = window.location.protocol === 'https:';
+    const protocol = isHttps ? 'wss' : 'ws';
+    const host = isHttps ? window.location.host : `${this.config.serverHost}:${this.config.serverPort}`;
+    this.log(`Using WebSocket (${protocol}://${host}${this.config.namespace})`);
 
-    const wsUrl = `${protocol}://${host}:${this.config.serverPort}${this.config.namespace}`;
+    const wsUrl = `${protocol}://${host}${this.config.namespace}`;
 
     return new Promise((resolve, reject) => {
       const connectTimeout = setTimeout(() => {
