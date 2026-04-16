@@ -552,10 +552,13 @@ class PersistentCreatureIndex {
     // Route to system-specific builder
     if (gameSystem === 'pf2e') {
       return await this.buildPF2eIndex(force);
+    } else if (gameSystem === 'starfinder2e') {
+      // SF2e shares the same Foundry data-path structure as PF2e
+      return await this.buildPF2eIndex(force);
     } else if (gameSystem === 'dnd5e') {
       return await this.buildDnD5eIndex(force);
     } else {
-      throw new Error(`Enhanced creature index not supported for system: ${gameSystem}. Only D&D 5e and Pathfinder 2e are currently supported.`);
+      throw new Error(`Enhanced creature index not supported for system: ${gameSystem}. Supported systems: D&D 5e, Pathfinder 2e, Starfinder 2e.`);
     }
   }
 

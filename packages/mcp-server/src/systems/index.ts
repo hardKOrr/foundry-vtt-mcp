@@ -13,6 +13,7 @@ export type {
   IndexBuilder,
   DnD5eCreatureIndex,
   PF2eCreatureIndex,
+  SF2eCreatureIndex,
   DSA5CreatureIndex,
   GenericCreatureIndex,
   AnyCreatureIndex

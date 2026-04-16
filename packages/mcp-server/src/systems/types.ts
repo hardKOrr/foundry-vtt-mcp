@@ -11,7 +11,7 @@ import { z } from 'zod';
  * Supported game system identifiers
  * Extend this type when adding new systems
  */
-export type SystemId = 'dnd5e' | 'pf2e' | 'dsa5' | 'other';
+export type SystemId = 'dnd5e' | 'pf2e' | 'sf2e' | 'dsa5' | 'other';
 
 /**
  * System metadata returned by adapters
@@ -197,6 +197,27 @@ export interface PF2eCreatureIndex extends SystemCreatureIndex {
 }
 
 /**
+ * Starfinder 2e specific creature index structure
+ * No alignment field — SF2e removed the alignment system.
+ * Adds Stamina Points and Resolve Points as SF2e-specific resources.
+ */
+export interface SF2eCreatureIndex extends SystemCreatureIndex {
+  system: 'sf2e';
+  systemData: {
+    level?: number;
+    traits?: string[];
+    creatureType?: string;
+    size?: string;
+    rarity?: string;
+    hasSpellcasting: boolean;
+    hitPoints?: number;
+    armorClass?: number;
+    staminaPoints?: number;   // SF2e Stamina Points (SP)
+    resolvePoints?: number;   // SF2e Resolve Points (RP)
+  };
+}
+
+/**
  * DSA5 (Das Schwarze Auge 5) specific creature index structure
  */
 export interface DSA5CreatureIndex extends SystemCreatureIndex {
@@ -232,4 +253,4 @@ export interface GenericCreatureIndex extends SystemCreatureIndex {
 /**
  * Union type of all creature index types
  */
-export type AnyCreatureIndex = DnD5eCreatureIndex | PF2eCreatureIndex | DSA5CreatureIndex | GenericCreatureIndex;
+export type AnyCreatureIndex = DnD5eCreatureIndex | PF2eCreatureIndex | SF2eCreatureIndex | DSA5CreatureIndex | GenericCreatureIndex;
